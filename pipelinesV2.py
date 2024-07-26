@@ -75,8 +75,7 @@ class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
         return X, self.transform(y)
 
 class NBPipeline(Pipeline):
-    def __init__(self, task_type='classification'):
-        super().__init__()
+    def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
         self.label_encoder = LabelEncoder() if task_type == 'classification' else None
         
@@ -103,7 +102,7 @@ class NBPipeline(Pipeline):
             ('classifier', GaussianNB())
         ]
 
-        super().__init__(steps)
+        super().__init__(steps=steps, memory=memory, verbose=verbose)
 
     def fit(self, X, y):
         mask = ~pd.isnull(y)
@@ -123,10 +122,10 @@ class NBPipeline(Pipeline):
         return y_pred
     
 class GLMPipeline(Pipeline):
-    def __init__(self, task_type='classification'):
+    def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
         self.label_encoder = LabelEncoder() if task_type == 'classification' else None
-
+        
         numeric_transformer = Pipeline(steps=[
             ('scaler', StandardScaler())
         ])
@@ -149,7 +148,7 @@ class GLMPipeline(Pipeline):
             ('classifier', LogisticRegression())
         ]
 
-        super().__init__(steps)
+        super().__init__(steps=steps, memory=memory, verbose=verbose)
 
     def fit(self, X, y):
         # Remove missing y values
