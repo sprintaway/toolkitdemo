@@ -6,8 +6,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OrdinalEncoder, LabelEncoder, StandardScaler, OneHotEncoder
 from sklearn.naive_bayes import GaussianNB, CategoricalNB
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.preprocessing import FunctionTransformer
 import miceforest as mf
+from sklearn.model_selection import train_test_split
 
 class ColumnTypeConverter(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -74,33 +74,70 @@ class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
         self.fit(X, y)
         return X, self.transform(y)
 
+class SaveEncodedY(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.encoded_y = None
+
+    def fit(self, X, y=None):
+        self.encoded_y = y
+        return self
+
+    def transform(self, X):
+        return X
+
+class SavePreprocessedX(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.preprocessed_X = None
+
+    def fit(self, X, y=None):
+        self.preprocessed_X = pd.DataFrame(X, columns=X.columns if hasattr(X, 'columns') else None)
+        return self
+
+    def transform(self, X):
+        return X
+
+class SaveMissingYMask(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.mask = None
+
+    def fit(self, X, y=None):
+        if y is not None:
+            self.mask = ~pd.isnull(y)
+        return self
+
+    def transform(self, X, y=None):
+        return X
+    
 class NBPipeline(Pipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
         self.label_encoder = LabelEncoder() if task_type == 'classification' else None
         
-
-        numeric_transformer = Pipeline(steps=[
-            ('scaler', StandardScaler())
-        ])
-
-        categorical_transformer = Pipeline(steps=[
-            ('ordinal', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
-        ])
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
-                ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
+        if steps is None:
+            numeric_transformer = Pipeline(steps=[
+                ('scaler', StandardScaler())
             ])
 
-        steps = [
-            ('remove_missing_y', RemoveMissingYValues()),
-            ('converter', ColumnTypeConverter()),
-            ('mice_imputer', MICEImputer()),
-            ('preprocessor', preprocessor),
-            ('classifier', GaussianNB())
-        ]
+            categorical_transformer = Pipeline(steps=[
+                ('ordinal', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
+            ])
+
+            preprocessor = ColumnTransformer(
+                transformers=[
+                    ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
+                    ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
+                ])
+
+            steps = [
+                ('remove_missing_y', RemoveMissingYValues()),
+                ('save_missing_y_mask', SaveMissingYMask()),
+                ('converter', ColumnTypeConverter()),
+                ('mice_imputer', MICEImputer()),
+                ('preprocessor', preprocessor),
+                ('save_preprocessed_x', SavePreprocessedX()),
+                ('save_encoded_y', SaveEncodedY()),
+                ('classifier', GaussianNB())
+            ]
 
         super().__init__(steps=steps, memory=memory, verbose=verbose)
 
@@ -120,33 +157,37 @@ class NBPipeline(Pipeline):
         if self.task_type == 'classification' and self.label_encoder is not None:
             y_pred = self.label_encoder.inverse_transform(y_pred)
         return y_pred
-    
+
 class GLMPipeline(Pipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
         self.label_encoder = LabelEncoder() if task_type == 'classification' else None
-        
-        numeric_transformer = Pipeline(steps=[
-            ('scaler', StandardScaler())
-        ])
 
-        categorical_transformer = Pipeline(steps=[
-            ('onehot', OneHotEncoder(handle_unknown='ignore'))
-        ])
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
-                ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
+        if steps is None:
+            numeric_transformer = Pipeline(steps=[
+                ('scaler', StandardScaler())
             ])
 
-        steps = [
-            ('remove_missing_y', RemoveMissingYValues()),
-            ('converter', ColumnTypeConverter()),
-            ('mice_imputer', MICEImputer()),
-            ('preprocessor', preprocessor),
-            ('classifier', LogisticRegression())
-        ]
+            categorical_transformer = Pipeline(steps=[
+                ('onehot', OneHotEncoder(handle_unknown='ignore'))
+            ])
+
+            preprocessor = ColumnTransformer(
+                transformers=[
+                    ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
+                    ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
+                ])
+
+            steps = [
+                ('remove_missing_y', RemoveMissingYValues()),
+                ('save_missing_y_mask', SaveMissingYMask()),
+                ('converter', ColumnTypeConverter()),
+                ('mice_imputer', MICEImputer()),
+                ('preprocessor', preprocessor),
+                ('save_preprocessed_x', SavePreprocessedX()),
+                ('save_encoded_y', SaveEncodedY()),
+                ('classifier', LogisticRegression())
+            ]
 
         super().__init__(steps=steps, memory=memory, verbose=verbose)
 
@@ -167,3 +208,4 @@ class GLMPipeline(Pipeline):
         if self.task_type == 'classification' and self.label_encoder is not None:
             y_pred = self.label_encoder.inverse_transform(y_pred)
         return y_pred
+
