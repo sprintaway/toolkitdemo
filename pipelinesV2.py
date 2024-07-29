@@ -48,14 +48,19 @@ class MICEImputer(BaseEstimator, TransformerMixin):
         self.datasets = datasets
         self.iterations = iterations
         self.kernel = None
+        self.has_missing_values = False
 
     def fit(self, X, y=None):
-        self.kernel = mf.ImputationKernel(data=X, datasets=self.datasets, save_all_iterations=True)
-        self.kernel.mice(self.iterations, verbose=False)
+        self.has_missing_values = X.isnull().any().any()
+        if self.has_missing_values:
+            self.kernel = mf.ImputationKernel(data=X, datasets=self.datasets, save_all_iterations=True)
+            self.kernel.mice(self.iterations, verbose=False)
         return self
 
     def transform(self, X):
-        return self.kernel.impute_new_data(new_data=X).complete_data(dataset=0)
+        if self.has_missing_values:
+            return self.kernel.impute_new_data(new_data=X).complete_data(dataset=0)
+        return X
 
 class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
     def __init__(self):
