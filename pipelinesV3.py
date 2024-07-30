@@ -15,114 +15,195 @@ from sklearn.base import clone
 
 
 
-class CustomPipeline(Pipeline):
-    def __init__(self, steps, *, memory=None, verbose=False):
-        super().__init__(steps, memory=memory, verbose=verbose)
-        self._validate_steps()
-        self._final_estimator_step = self.steps[-1][1]
+# class CustomPipeline(Pipeline):
+#     def __init__(self, steps, *, memory=None, verbose=False):
+#         super().__init__(steps, memory=memory, verbose=verbose)
+#         self._validate_steps()
+#         self._final_estimator_step = self.steps[-1][1]
 
-    def _validate_steps(self):
-        names, estimators = zip(*self.steps)
-        self._validate_names(names)
-        self._named_steps_dict = dict(self.steps)
+#     @property
+#     def named_steps(self):
+#         return self._named_steps_dict
 
-    @property
-    def named_steps(self):
-        return self._named_steps_dict
-
-    @property
-    def _final_estimator(self):
-        return self._final_estimator_step
+#     @property
+#     def _final_estimator(self):
+#         return self._final_estimator_step
     
-    @property
-    def _estimator_type(self):
-        return self.steps[-1][1]._estimator_type
+#     @property
+#     def _estimator_type(self):
+#         return self.steps[-1][1]._estimator_type
 
-    def _fit(self, X, y=None, **fit_params):
-        self.steps = list(self.steps)
-        self._validate_steps()
+#     def _fit(self, X, y=None, **fit_params):
+#         self.steps = list(self.steps)
+#         self._validate_steps()
         
-        fit_params_steps = self._check_fit_params(**fit_params)
-        Xt = X
-        for (step_idx,
-             name,
-             transformer) in self._iter(with_final=False,
-                                        filter_passthrough=False):
-            if transformer is None or transformer == 'passthrough':
-                continue
+#         fit_params_steps = self._check_fit_params(**fit_params)
+#         Xt = X
+#         for (step_idx,
+#              name,
+#              transformer) in self._iter(with_final=False,
+#                                         filter_passthrough=False):
+#             if transformer is None or transformer == 'passthrough':
+#                 continue
 
-            if hasattr(transformer, "fit_transform"):
-                Xt = transformer.fit_transform(Xt, y, **fit_params_steps[name])
-            else:
-                Xt = transformer.fit(Xt, y, **fit_params_steps[name]).transform(Xt)
+#             if hasattr(transformer, "fit_transform"):
+#                 Xt = transformer.fit_transform(Xt, y, **fit_params_steps[name])
+#             else:
+#                 Xt = transformer.fit(Xt, y, **fit_params_steps[name]).transform(Xt)
 
-        if self._final_estimator != 'passthrough':
-            self._final_estimator.fit(Xt, y, **fit_params_steps[self.steps[-1][0]])
+#         if self._final_estimator != 'passthrough':
+#             self._final_estimator.fit(Xt, y, **fit_params_steps[self.steps[-1][0]])
 
+#         return self
+
+#     def _fit_transform_one(self, X, y, weight, fit_params, message_clsname='', message=None, **fit_params_steps):
+#         if message_clsname and message:
+#             with _print_elapsed_time(message_clsname, message):
+#                 if weight is None:
+#                     return self._fit_transform_one_no_weight(X, y, fit_params, **fit_params_steps)
+#                 else:
+#                     return self._fit_transform_one_weighted(X, y, weight, fit_params, **fit_params_steps)
+#         else:
+#             if weight is None:
+#                 return self._fit_transform_one_no_weight(X, y, fit_params, **fit_params_steps)
+#             else:
+#                 return self._fit_transform_one_weighted(X, y, weight, fit_params, **fit_params_steps)
+
+#     def _fit_transform_one_no_weight(self, X, y, fit_params, **fit_params_steps):
+#         Xt = X
+#         for name, transformer in self.steps[:-1]:  # excluding final estimator
+#             if transformer is None or transformer == 'passthrough':
+#                 continue
+#             if hasattr(transformer, 'fit_transform'):
+#                 Xt = transformer.fit_transform(Xt, y, **fit_params_steps.get(name, {}))
+#             else:
+#                 Xt = transformer.fit(Xt, y, **fit_params_steps.get(name, {})).transform(Xt)
+#         return Xt, fit_params
+
+#     def _fit_transform_one_weighted(self, X, y, weight, fit_params, **fit_params_steps):
+#         Xt = X
+#         for name, transformer in self.steps[:-1]:  # excluding final estimator
+#             if transformer is None or transformer == 'passthrough':
+#                 continue
+#             if hasattr(transformer, 'fit_transform'):
+#                 Xt = transformer.fit_transform(Xt, y, sample_weight=weight, **fit_params_steps[name])
+#             else:
+#                 Xt = transformer.fit(Xt, y, sample_weight=weight, **fit_params_steps[name]).transform(Xt)
+#         return Xt, fit_params
+
+#     def fit_transform(self, X, y=None, **fit_params):
+#         Xt, fit_params = self._fit_transform_one(
+#             X, y, None, fit_params, _final_estimator="passthrough"
+#         )
+#         if self._final_estimator != "passthrough":
+#             if hasattr(self._final_estimator, 'fit_transform'):
+#                 Xt = self._final_estimator.fit_transform(Xt, y, **fit_params)
+#             else:
+#                 self._final_estimator.fit(Xt, y, **fit_params)
+#                 Xt = self._final_estimator.transform(Xt)
+#         return Xt
+
+#     def predict(self, X, **predict_params):
+#         Xt = X
+#         for _, _, transform in self._iter(with_final=False):
+#             Xt = transform.transform(Xt)
+#         return self.steps[-1][-1].predict(Xt, **predict_params)
+
+class CustomColumnTransformer(ColumnTransformer):
+    def fit(self, X, y=None):
+        super().fit(X, y)
+        print("Fitting X!", X)
         return self
 
-    def _fit_transform_one(self, X, y, weight, fit_params, message_clsname='', message=None, **fit_params_steps):
-        if message_clsname and message:
-            with _print_elapsed_time(message_clsname, message):
-                if weight is None:
-                    return self._fit_transform_one_no_weight(X, y, fit_params, **fit_params_steps)
+    def fit_transform(self, X, y=None):
+        Xt = super().fit_transform(X, y)
+        print("Fitting + Transforming X!", X)
+        return Xt, y
+
+    def transform(self, X, y=None):
+        Xt = super().transform(X)
+        print("Transforming X!", X)
+        if y is None:
+            return Xt
+        return Xt, y
+
+
+class CustomPipeline(Pipeline):
+    def fit(self, X, y=None, **fit_params):
+        Xt = X
+        yt = y
+        for name, transform in self.steps[:-1]:
+            print(f"Fitting step: {name}")
+            print(f"Before {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+            if transform is not None:
+                if hasattr(transform, "fit_transform"):
+                    result = transform.fit_transform(Xt, yt, **fit_params)
                 else:
-                    return self._fit_transform_one_weighted(X, y, weight, fit_params, **fit_params_steps)
-        else:
-            if weight is None:
-                return self._fit_transform_one_no_weight(X, y, fit_params, **fit_params_steps)
-            else:
-                return self._fit_transform_one_weighted(X, y, weight, fit_params, **fit_params_steps)
-
-    def _fit_transform_one_no_weight(self, X, y, fit_params, **fit_params_steps):
-        Xt = X
-        for name, transformer in self.steps[:-1]:  # excluding final estimator
-            if transformer is None or transformer == 'passthrough':
-                continue
-            if hasattr(transformer, 'fit_transform'):
-                Xt = transformer.fit_transform(Xt, y, **fit_params_steps.get(name, {}))
-            else:
-                Xt = transformer.fit(Xt, y, **fit_params_steps.get(name, {})).transform(Xt)
-        return Xt, fit_params
-
-    def _fit_transform_one_weighted(self, X, y, weight, fit_params, **fit_params_steps):
-        Xt = X
-        for name, transformer in self.steps[:-1]:  # excluding final estimator
-            if transformer is None or transformer == 'passthrough':
-                continue
-            if hasattr(transformer, 'fit_transform'):
-                Xt = transformer.fit_transform(Xt, y, sample_weight=weight, **fit_params_steps[name])
-            else:
-                Xt = transformer.fit(Xt, y, sample_weight=weight, **fit_params_steps[name]).transform(Xt)
-        return Xt, fit_params
-
-    def fit_transform(self, X, y=None, **fit_params):
-        Xt, fit_params = self._fit_transform_one(
-            X, y, None, fit_params, _final_estimator="passthrough"
-        )
-        if self._final_estimator != "passthrough":
-            if hasattr(self._final_estimator, 'fit_transform'):
-                Xt = self._final_estimator.fit_transform(Xt, y, **fit_params)
-            else:
-                self._final_estimator.fit(Xt, y, **fit_params)
-                Xt = self._final_estimator.transform(Xt)
-        return Xt
-
-    def predict(self, X, **predict_params):
-        Xt = X
-        for _, _, transform in self._iter(with_final=False):
-            Xt = transform.transform(Xt)
-        return self.steps[-1][-1].predict(Xt, **predict_params)
-
-    def __getitem__(self, ind):
-        if isinstance(ind, slice):
-            return self.__class__(self.steps[ind])
-        elif isinstance(ind, str):
-            return self.named_steps[ind]
-        elif isinstance(ind, int):
-            return self.steps[ind][1]
-        raise ValueError(f"Index {ind} is not supported")
+                    transform.fit(Xt, yt, **fit_params)
+                    result = transform.transform(Xt, yt)
+                
+                if isinstance(result, tuple):
+                    if len(result) >= 2:
+                        Xt, yt = result[:2]
+                    else:
+                        Xt = result[0]
+                else:
+                    Xt = result
+            print(f"After {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+            if isinstance(yt, pd.Series):
+                print(f"y unique values: {yt.unique()}")
+            elif isinstance(yt, np.ndarray):
+                print(f"y unique values: {np.unique(yt)}")
+        
+        # Fit the final estimator
+        self.steps[-1][1].fit(Xt, yt, **fit_params)
+        return self
     
+    def fit_transform(self, X, y=None, **fit_params):
+        Xt = X
+        yt = y
+        for name, transform in self.steps[:-1]:
+            print(f"Processing step: {name}")
+            print(f"Before {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+            if transform is not None:
+                if hasattr(transform, "fit_transform"):
+                    result = transform.fit_transform(Xt, yt, **fit_params)
+                else:
+                    transform.fit(Xt, yt, **fit_params)
+                    result = transform.transform(Xt, yt)
+                
+                if isinstance(result, tuple):
+                    if len(result) >= 2:
+                        Xt, yt = result[:2]
+                    else:
+                        Xt = result[0]
+                else:
+                    Xt = result
+            print(f"After {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+            if isinstance(yt, pd.Series):
+                print(f"y unique values: {yt.unique()}")
+            elif isinstance(yt, np.ndarray):
+                print(f"y unique values: {np.unique(yt)}")
+        return Xt, yt
+
+    def transform(self, X, y=None):
+        Xt = X
+        yt = y
+        for name, transform in self.steps[:-1]:
+            print(f"Before {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+            if transform is not None:
+                result = transform.transform(Xt, yt)
+                if isinstance(result, tuple):
+                    if len(result) >= 2:
+                        Xt, yt = result[:2]
+                    else:
+                        Xt = result[0]
+                else:
+                    Xt = result
+            print(f"After {name}: X shape = {Xt.shape}, y type = {type(yt)}")
+        return Xt, yt
+    
+
 class ColumnTypeConverter(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.numerical_columns = None
@@ -130,18 +211,26 @@ class ColumnTypeConverter(BaseEstimator, TransformerMixin):
 
     def fit(self, X, y=None):
         if isinstance(X, tuple):
-            X = X[0]
+            X = X[0]#[0][0]
+            #print("Fitting, returning X", X)
         self.numerical_columns = X.select_dtypes(include=['float64', 'int64']).columns
         self.categorical_columns = X.select_dtypes(include=['object', 'category']).columns
         return self
 
-    def transform(self, X):
+    def transform(self, X, y=None):
         if isinstance(X, tuple):
-            X = X[0]
+            X, y = X[0][0][0], X[1]
+            print("Transforming, returning X", X)  
         X = X.copy()
         X[self.numerical_columns] = X[self.numerical_columns].apply(pd.to_numeric, errors='coerce')
         X[self.categorical_columns] = X[self.categorical_columns].astype('category')
-        return X
+        return X, y
+
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        print("Fitting + Transforming, returning X", X)
+        return self.transform(X, y)
+    
 
 class RemoveMissingYValues(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
@@ -151,9 +240,9 @@ class RemoveMissingYValues(BaseEstimator, TransformerMixin):
         if y is not None:
             mask = ~pd.isnull(y)
             return X[mask], y[mask]
-        return X
+        return X, y
 
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y=None, **fit_params):
         self.fit(X, y)
         return self.transform(X, y)
 
@@ -165,16 +254,27 @@ class MICEImputer(BaseEstimator, TransformerMixin):
         self.has_missing_values = False
 
     def fit(self, X, y=None):
+        #if isinstance(X, tuple):
+            #X = X[0]
+        print("X columns imputation fit!", X.dtypes)
         self.has_missing_values = X.isnull().any().any()
         if self.has_missing_values:
             self.kernel = mf.ImputationKernel(data=X, datasets=self.datasets, save_all_iterations=True)
             self.kernel.mice(self.iterations, verbose=False)
         return self
 
-    def transform(self, X):
+    def transform(self, X, y=None):
+        if isinstance(X, tuple):
+            X = X[0]
+        print("Before imputation X", X)
+        print("X columns imputation transform!", X.dtypes)
         if self.has_missing_values:
-            return self.kernel.impute_new_data(new_data=X).complete_data(dataset=0)
-        return X
+            X = self.kernel.impute_new_data(new_data=X).complete_data(dataset=0)
+        return X, y
+    
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        return self.transform(X, y)
 
 class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -187,7 +287,7 @@ class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         if y is not None:
             return self.label_encoder.transform(y)
-        return X
+        return X, y
 
     def fit_transform(self, X, y=None):
         self.fit(X, y)
@@ -195,14 +295,24 @@ class LabelEncoderTransformer(BaseEstimator, TransformerMixin):
 
 class SaveEncodedY(BaseEstimator, TransformerMixin):
     def __init__(self):
-        self.encoded_y = None
+        self.label_encoder = LabelEncoder()
 
     def fit(self, X, y=None):
-        self.encoded_y = y
+        if y is not None:
+            self.label_encoder.fit(y)
         return self
 
-    def transform(self, X):
-        return X
+    def transform(self, X, y=None):
+        if y is not None:
+            y = pd.Series(self.label_encoder.transform(y))
+        return X, y
+
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        return self.transform(X, y)
+    
+    def inverse_transform(self, y):
+        return self.label_encoder.inverse_transform(y)
 
 class SavePreprocessedX(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -212,8 +322,12 @@ class SavePreprocessedX(BaseEstimator, TransformerMixin):
         self.preprocessed_X = pd.DataFrame(X, columns=X.columns if hasattr(X, 'columns') else None)
         return self
 
-    def transform(self, X):
-        return X
+    def transform(self, X, y=None):
+        return X, y
+    
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        return self.transform(X, y)
 
 class SaveMissingYMask(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -225,7 +339,11 @@ class SaveMissingYMask(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        return X
+        return X, y
+
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        return self.transform(X, y)
     
 class NBPipeline(CustomPipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
@@ -241,7 +359,7 @@ class NBPipeline(CustomPipeline):
                 ('ordinal', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
             ])
 
-            preprocessor = ColumnTransformer(
+            preprocessor = CustomColumnTransformer(
                 transformers=[
                     ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
                     ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
@@ -250,11 +368,12 @@ class NBPipeline(CustomPipeline):
             steps = [
                 ('remove_missing_y', RemoveMissingYValues()),
                 ('save_missing_y_mask', SaveMissingYMask()),
+                ('save_encoded_y', SaveEncodedY()),
                 ('converter', ColumnTypeConverter()),
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
-                ('save_encoded_y', SaveEncodedY()),
+                #('save_encoded_y', SaveEncodedY()),
                 ('classifier', GaussianNB())
             ]
 
@@ -291,7 +410,7 @@ class GLMPipeline(CustomPipeline):
                 ('onehot', OneHotEncoder(handle_unknown='ignore'))
             ])
 
-            preprocessor = ColumnTransformer(
+            preprocessor = CustomColumnTransformer(
                 transformers=[
                     ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
                     ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
@@ -300,11 +419,12 @@ class GLMPipeline(CustomPipeline):
             steps = [
                 ('remove_missing_y', RemoveMissingYValues()),
                 ('save_missing_y_mask', SaveMissingYMask()),
+                ('save_encoded_y', SaveEncodedY()),
                 ('converter', ColumnTypeConverter()),
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
-                ('save_encoded_y', SaveEncodedY()),
+                #('save_encoded_y', SaveEncodedY()),
                 ('classifier', LogisticRegression())
             ]
 
@@ -312,19 +432,18 @@ class GLMPipeline(CustomPipeline):
 
     def fit(self, X, y):
         # Remove missing y values
-        mask = ~pd.isnull(y)
-        X = X[mask]
-        y = y[mask]
+        # mask = ~pd.isnull(y)
+        # X = X[mask]
+        # y = y[mask]
         
-        # Continue with the rest of the fit method
-        if self.task_type == 'classification' and self.label_encoder is not None:
-            y = self.label_encoder.fit_transform(y)
+        # if self.task_type == 'classification' and self.label_encoder is not None:
+        #     y = self.label_encoder.fit_transform(y)
         
         return super().fit(X, y)
 
     def predict(self, X):
         y_pred = super().predict(X)
-        if self.task_type == 'classification' and self.label_encoder is not None:
-            y_pred = self.label_encoder.inverse_transform(y_pred)
+        # if self.task_type == 'classification' and self.label_encoder is not None:
+        #     y_pred = self.label_encoder.inverse_transform(y_pred)
         return y_pred
 
