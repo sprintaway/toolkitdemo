@@ -9,6 +9,8 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 import miceforest as mf
 from sklearn.model_selection import train_test_split
 
+# This is pipelines V2!
+
 class ColumnTypeConverter(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.numerical_columns = None

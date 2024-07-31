@@ -26,7 +26,7 @@ class FeatureSelector:
         self.task_type = task_type
         self.numerical_columns = None
         self.categorical_columns = None
-        self.imputed_X = None  # Added attribute to store imputed X
+        self.imputed_X = None  
         self.methods = {
             'classification': [
                 'permutation',
@@ -88,22 +88,22 @@ class FeatureSelector:
             if not is_categorical:
                 if self.task_type == 'regression':
                     sns.scatterplot(x=self.imputed_X[feature], y=self.y, ax=ax)
-                    ax.set_title(f'{feature} vs Target (Scatter Plot)')
+                    ax.set_title(f'{feature} vs {self.y.name} (Scatter Plot)')
                 else:
                     sns.boxplot(x=self.y, y=self.imputed_X[feature], ax=ax)
-                    ax.set_title(f'Target vs {feature} (Box Plot)')
+                    ax.set_title(f'{self.y.name} vs {feature} (Box Plot)')
             else:
                 if self.task_type == 'regression':
                     sns.boxplot(x=self.X[feature], y=self.y, ax=ax)  
-                    ax.set_title(f'{feature} vs Target (Box Plot)')
+                    ax.set_title(f'{feature} vs {self.y.name} (Box Plot)')
                 else:
                     # Use original X for categorical features
                     contingency_table = pd.crosstab(self.X[feature], self.y, normalize='index')
                     contingency_table.plot(kind='bar', stacked=True, ax=ax)
-                    ax.set_title(f'{feature} vs Target (Stacked Bar Chart)')
+                    ax.set_title(f'{feature} vs {self.y.name} (Stacked Bar Chart)')
 
-            ax.set_xlabel('Target' if not is_categorical and self.task_type != 'regression' else feature)
-            ax.set_ylabel(feature if not is_categorical and self.task_type != 'regression' else 'Target')
+            ax.set_xlabel(self.y.name if not is_categorical and self.task_type != 'regression' else feature)
+            ax.set_ylabel(feature if not is_categorical and self.task_type != 'regression' else self.y.name)
             plt.xticks(rotation=45, ha='right')
             plt.tight_layout()
             plt.show()
@@ -161,6 +161,21 @@ class FeatureSelector:
         )
 
         return count_df[count_df['NumericCount'] >= number].index.tolist()
+    
+    def selected_by_at_most(self, number=1):
+        
+        total_methods = len(self.methods[self.task_type])
+        if number > total_methods:
+            raise ValueError(f"Invalid input: 'number' ({number}) cannot exceed the number of feature selection methods ({total_methods}).")
+
+        count_df = self.get_count()
+
+        count_df["NumericCount"] = count_df["Count"].apply(
+            lambda x: int(x.split(" / ")[0])
+        )
+
+        return count_df[count_df['NumericCount'] <= number].index.tolist()
+
 
     def symmetrical_uncertainty_feature_selection(X, y, task_type='classification'):
         """

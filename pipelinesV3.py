@@ -13,7 +13,7 @@ from sklearn.utils import _print_elapsed_time
 from sklearn.utils.metaestimators import available_if
 from sklearn.base import clone
 
-
+# This is pipelines V3!
 
 # class CustomPipeline(Pipeline):
 #     def __init__(self, steps, *, memory=None, verbose=False):
@@ -109,24 +109,67 @@ from sklearn.base import clone
 #             Xt = transform.transform(Xt)
 #         return self.steps[-1][-1].predict(Xt, **predict_params)
 
-class CustomColumnTransformer(ColumnTransformer):
+# class CustomColumnTransformer(ColumnTransformer):
+#     def fit(self, X, y=None):
+#         super().fit(X, y)
+#         print("Fitting X!", X)
+#         return self
+
+#     def fit_transform(self, X, y=None):
+#         Xt = super().fit_transform(X, y)
+#         print("Fitting + Transforming X!", X)
+#         return Xt, y
+
+#     def transform(self, X, y=None):
+#         Xt = super().transform(X)
+#         print("Transforming X!", X)
+#         if y is None:
+#             return Xt
+#         return Xt, y
+
+# Because making it inherit from columntransformer just doesn't work :(
+
+class CustomColumnTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, transformers):
+        self.transformers = transformers
+        self.fitted_transformers = None
+
     def fit(self, X, y=None):
-        super().fit(X, y)
-        print("Fitting X!", X)
+        if isinstance(X, tuple):
+            X, y = X
+
+        self.fitted_transformers = []
+        for name, transformer, columns in self.transformers:
+            if callable(columns):
+                columns = columns(X)
+            X_subset = X[columns]
+            fitted_transformer = clone(transformer).fit(X_subset, y)
+            self.fitted_transformers.append((name, fitted_transformer, columns))
         return self
 
-    def fit_transform(self, X, y=None):
-        Xt = super().fit_transform(X, y)
-        print("Fitting + Transforming X!", X)
-        return Xt, y
-
     def transform(self, X, y=None):
-        Xt = super().transform(X)
-        print("Transforming X!", X)
-        if y is None:
-            return Xt
-        return Xt, y
+        if isinstance(X, tuple):
+            X, y = X
 
+        result = X.copy()
+        for name, transformer, columns in self.fitted_transformers:
+            if callable(columns):
+                columns = columns(X)
+            X_subset = X[columns]
+            transformed = transformer.transform(X_subset)
+            
+            if isinstance(transformed, np.ndarray) and transformed.ndim == 2:
+                for i, col in enumerate(columns):
+                    result[col] = transformed[:, i]
+            else:
+                result[columns] = transformed
+        
+        print(f"CustomColumnTransformer output shape: {result.shape}")
+        print(f"Result (X) is now: {result}")
+        return (result, y) if y is not None else result
+
+    def fit_transform(self, X, y=None, **fit_params):
+        return self.fit(X, y).transform(X, y)
 
 class CustomPipeline(Pipeline):
     def fit(self, X, y=None, **fit_params):
@@ -270,6 +313,8 @@ class MICEImputer(BaseEstimator, TransformerMixin):
         print("X columns imputation transform!", X.dtypes)
         if self.has_missing_values:
             X = self.kernel.impute_new_data(new_data=X).complete_data(dataset=0)
+        print("Imputation of X done!")
+        print(f"MICEImputer output shape: {X.shape}")
         return X, y
     
     def fit_transform(self, X, y=None, **fit_params):
@@ -348,7 +393,7 @@ class SaveMissingYMask(BaseEstimator, TransformerMixin):
 class NBPipeline(CustomPipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
-        self.label_encoder = LabelEncoder() if task_type == 'classification' else None
+        self.missing_y_mask = None
         
         if steps is None:
             numeric_transformer = Pipeline(steps=[
@@ -373,33 +418,36 @@ class NBPipeline(CustomPipeline):
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
-                #('save_encoded_y', SaveEncodedY()),
                 ('classifier', GaussianNB())
             ]
 
         super().__init__(steps=steps, memory=memory, verbose=verbose)
 
     def fit(self, X, y):
-        mask = ~pd.isnull(y)
-        X = X[mask]
-        y = y[mask]
-        
-        # Encode target variable if it's a classification task
-        if self.task_type == 'classification' and self.label_encoder is not None:
-            y = self.label_encoder.fit_transform(y)
-        
+        self.missing_y_mask = ~pd.isnull(y)
         return super().fit(X, y)
 
     def predict(self, X):
+        if isinstance(X, tuple):
+            X = X[0]  
         y_pred = super().predict(X)
-        if self.task_type == 'classification' and self.label_encoder is not None:
-            y_pred = self.label_encoder.inverse_transform(y_pred)
-        return y_pred
+        y_pred_original = self.named_steps['save_encoded_y'].inverse_transform(y_pred)
+        return y_pred_original
+
+    def score(self, X, y):
+        print("Scoring X!", X)
+        if isinstance(X, tuple):
+            X = X[0]  
+        y_pred = self.predict(X)
+        mask = self.missing_y_mask if self.missing_y_mask is not None else ~pd.isnull(y)
+        y_clean = y[mask]
+        y_pred_clean = y_pred[mask]
+        return (y_clean == y_pred_clean).mean()
 
 class GLMPipeline(CustomPipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
-        self.label_encoder = LabelEncoder() if task_type == 'classification' else None
+        self.missing_y_mask = None
 
         if steps is None:
             numeric_transformer = Pipeline(steps=[
@@ -424,26 +472,34 @@ class GLMPipeline(CustomPipeline):
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
-                #('save_encoded_y', SaveEncodedY()),
                 ('classifier', LogisticRegression())
             ]
 
         super().__init__(steps=steps, memory=memory, verbose=verbose)
 
     def fit(self, X, y):
-        # Remove missing y values
-        # mask = ~pd.isnull(y)
-        # X = X[mask]
-        # y = y[mask]
-        
-        # if self.task_type == 'classification' and self.label_encoder is not None:
-        #     y = self.label_encoder.fit_transform(y)
-        
+        self.missing_y_mask = ~pd.isnull(y)
         return super().fit(X, y)
 
     def predict(self, X):
+        if isinstance(X, tuple):
+            X = X[0]
         y_pred = super().predict(X)
-        # if self.task_type == 'classification' and self.label_encoder is not None:
-        #     y_pred = self.label_encoder.inverse_transform(y_pred)
-        return y_pred
+        y_pred_original = self.named_steps['save_encoded_y'].inverse_transform(y_pred)
+        return y_pred_original
+
+    def score(self, X, y):
+        print("Scoring X!", X)
+        if isinstance(X, tuple):
+            X = X[0]  
+        y_pred = self.predict(X)
+        mask = self.missing_y_mask if self.missing_y_mask is not None else ~pd.isnull(y)
+        y_clean = y[mask]
+        y_pred_clean = y_pred[mask]
+        return (y_clean == y_pred_clean).mean()
+
+    def predict_proba(self, X):
+        if isinstance(X, tuple):
+            X = X[0]
+        return self.steps[-1][1].predict_proba(self.transform(X)[0])
 

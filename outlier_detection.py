@@ -56,10 +56,12 @@ class OutlierDetector:
 
         numerical_data = self.imputed_data[self.numerical_columns]
 
-        pca = PCA(n_components='mle', svd_solver='full')
+        n_components = min(numerical_data.shape[0], numerical_data.shape[1])
+        pca = PCA(n_components=n_components, svd_solver='full')
         pca_result = pca.fit_transform(numerical_data)
+        self.pca_result = pd.DataFrame(data=pca_result[:, :2], columns=['PC1', 'PC2'])
 
-        pca_df = pd.DataFrame(data=pca_result, columns=[f'PC{i+1}' for i in range(pca_result.shape[1])])
+        pca_df = pd.DataFrame(data=pca_result[:, :2], columns=['PC1', 'PC2'])
 
         if outlier_indices is None:
             outlier_indices = []
