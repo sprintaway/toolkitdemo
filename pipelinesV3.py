@@ -151,25 +151,44 @@ class CustomColumnTransformer(BaseEstimator, TransformerMixin):
         if isinstance(X, tuple):
             X, y = X
 
-        result = X.copy()
+        result = pd.DataFrame(index=X.index)
         for name, transformer, columns in self.fitted_transformers:
             if callable(columns):
                 columns = columns(X)
             X_subset = X[columns]
             transformed = transformer.transform(X_subset)
             
-            if isinstance(transformed, np.ndarray) and transformed.ndim == 2:
-                for i, col in enumerate(columns):
-                    result[col] = transformed[:, i]
+            if isinstance(transformed, np.ndarray):
+                if transformed.ndim == 2:
+                    for i, col in enumerate(columns):
+                        result[col] = transformed[:, i]
+                else:
+                    result[columns] = transformed
+            elif isinstance(transformed, pd.DataFrame):
+                result = pd.concat([result, transformed], axis=1)
             else:
-                result[columns] = transformed
+                raise ValueError(f"Unexpected output type from transformer {name}")
         
         print(f"CustomColumnTransformer output shape: {result.shape}")
-        print(f"Result (X) is now: {result}")
+        print(f"Result (X) columns: {result.columns}")
         return (result, y) if y is not None else result
 
     def fit_transform(self, X, y=None, **fit_params):
         return self.fit(X, y).transform(X, y)
+
+class DataFrameToArrayTransformer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        if isinstance(X, pd.DataFrame):
+            X = X.to_numpy()
+        return X, y
+
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        return self.transform(X, y)
+    
 
 class CustomPipeline(Pipeline):
     def fit(self, X, y=None, **fit_params):
@@ -418,6 +437,7 @@ class NBPipeline(CustomPipeline):
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
+                ('to_array', DataFrameToArrayTransformer()),
                 ('classifier', GaussianNB())
             ]
 
@@ -428,9 +448,30 @@ class NBPipeline(CustomPipeline):
         return super().fit(X, y)
 
     def predict(self, X):
-        if isinstance(X, tuple):
-            X = X[0]  
-        y_pred = super().predict(X)
+        Xt = X
+        for name, transform in self.steps[:-1]:
+            print(f"Before {name}: X shape = {Xt.shape}, X type = {type(Xt)}")
+            if isinstance(Xt, pd.DataFrame):
+                print(f"X dtypes: {Xt.dtypes}")
+            if transform is not None:
+                try:
+                    result = transform.transform(Xt)
+                    if isinstance(result, tuple):
+                        Xt, _ = result
+                    else:
+                        Xt = result
+                except Exception as e:
+                    print(f"Error in {name} transform: {str(e)}")
+                    raise
+            print(f"After {name}: X shape = {Xt.shape}, X type = {type(Xt)}")
+            if isinstance(Xt, pd.DataFrame):
+                print(f"X dtypes: {Xt.dtypes}")
+        
+        print(f"Final X shape = {Xt.shape}, X type = {type(Xt)}")
+        if isinstance(Xt, np.ndarray):
+            print(f"X dtype: {Xt.dtype}")
+        
+        y_pred = self.steps[-1][1].predict(Xt)
         y_pred_original = self.named_steps['save_encoded_y'].inverse_transform(y_pred)
         return y_pred_original
 
@@ -443,6 +484,20 @@ class NBPipeline(CustomPipeline):
         y_clean = y[mask]
         y_pred_clean = y_pred[mask]
         return (y_clean == y_pred_clean).mean()
+    
+    def inverse_transform(self, y_pred):
+        return self.named_steps['save_encoded_y'].inverse_transform(y_pred)
+
+    @property
+    def preprocessor(self):
+        return CustomPipeline(self.steps[:-1])
+
+    @property
+    def classifier(self):
+        return self.steps[-1][1]
+
+    def preprocess(self, X):
+        return self.preprocessor.transform(X)[0]
 
 class GLMPipeline(CustomPipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
@@ -455,7 +510,7 @@ class GLMPipeline(CustomPipeline):
             ])
 
             categorical_transformer = Pipeline(steps=[
-                ('onehot', OneHotEncoder(handle_unknown='ignore'))
+                ('onehot', OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore'))
             ])
 
             preprocessor = CustomColumnTransformer(
@@ -463,6 +518,11 @@ class GLMPipeline(CustomPipeline):
                     ('num', numeric_transformer, lambda x: x.select_dtypes(include=['int64', 'float64']).columns),
                     ('cat', categorical_transformer, lambda x: x.select_dtypes(include=['category', 'object']).columns)
                 ])
+
+            if self.task_type == 'classification':
+                classifier = LogisticRegression()
+            else:
+                classifier = LinearRegression()
 
             steps = [
                 ('remove_missing_y', RemoveMissingYValues()),
@@ -472,7 +532,8 @@ class GLMPipeline(CustomPipeline):
                 ('mice_imputer', MICEImputer()),
                 ('preprocessor', preprocessor),
                 ('save_preprocessed_x', SavePreprocessedX()),
-                ('classifier', LogisticRegression())
+                ('to_array', DataFrameToArrayTransformer()),
+                ('classifier', classifier)
             ]
 
         super().__init__(steps=steps, memory=memory, verbose=verbose)
@@ -482,9 +543,30 @@ class GLMPipeline(CustomPipeline):
         return super().fit(X, y)
 
     def predict(self, X):
-        if isinstance(X, tuple):
-            X = X[0]
-        y_pred = super().predict(X)
+        Xt = X
+        for name, transform in self.steps[:-1]:
+            print(f"Before {name}: X shape = {Xt.shape}, X type = {type(Xt)}")
+            if isinstance(Xt, pd.DataFrame):
+                print(f"X dtypes: {Xt.dtypes}")
+            if transform is not None:
+                try:
+                    result = transform.transform(Xt)
+                    if isinstance(result, tuple):
+                        Xt, _ = result
+                    else:
+                        Xt = result
+                except Exception as e:
+                    print(f"Error in {name} transform: {str(e)}")
+                    raise
+            print(f"After {name}: X shape = {Xt.shape}, X type = {type(Xt)}")
+            if isinstance(Xt, pd.DataFrame):
+                print(f"X dtypes: {Xt.dtypes}")
+        
+        print(f"Final X shape = {Xt.shape}, X type = {type(Xt)}")
+        if isinstance(Xt, np.ndarray):
+            print(f"X dtype: {Xt.dtype}")
+        
+        y_pred = self.steps[-1][1].predict(Xt)
         y_pred_original = self.named_steps['save_encoded_y'].inverse_transform(y_pred)
         return y_pred_original
 
@@ -497,6 +579,20 @@ class GLMPipeline(CustomPipeline):
         y_clean = y[mask]
         y_pred_clean = y_pred[mask]
         return (y_clean == y_pred_clean).mean()
+    
+    def inverse_transform(self, y_pred):
+        return self.named_steps['save_encoded_y'].inverse_transform(y_pred)
+
+    @property
+    def preprocessor(self):
+        return CustomPipeline(self.steps[:-1])
+
+    @property
+    def classifier(self):
+        return self.steps[-1][1]
+
+    def preprocess(self, X):
+        return self.preprocessor.transform(X)[0]
 
     def predict_proba(self, X):
         if isinstance(X, tuple):

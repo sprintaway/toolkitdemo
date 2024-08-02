@@ -76,7 +76,10 @@ class FeatureSelector:
 
         for method in methods:
             print(f"Running {method} feature selection...")
-            selected_features = getattr(self.__class__, f"{method}_feature_selection")(self.imputed_X, self.y, self.task_type)
+            if method == 'jmim':
+                selected_features = getattr(self.__class__, f"{method}_feature_selection")(self.imputed_X, self.y, self.task_type, max_features=50)
+            else:
+                selected_features = getattr(self.__class__, f"{method}_feature_selection")(self.imputed_X, self.y, self.task_type)
             self.results[method] = selected_features
 
     def feature_plot(self, features):
@@ -208,8 +211,8 @@ class FeatureSelector:
             xi = X.iloc[:, i].values
             theta_i = mi_func(xi.reshape(-1, 1), y, discrete_features='auto')[0]  
 
-            theta_perm = np.zeros(500)
-            for j in range(500):
+            theta_perm = np.zeros(100)
+            for j in range(100):
                 xi_permuted = shuffle(xi)
                 theta_perm[j] = mi_func(xi_permuted.reshape(-1, 1), y, discrete_features='auto')[0]
 
@@ -257,7 +260,7 @@ class FeatureSelector:
         return list(significant_features)
 
 
-    def jmim_feature_selection(X, y, task_type='classification'):
+    def jmim_feature_selection(X, y, task_type='classification', max_features=50):
         """
         Performs Joint Mutual Information Maximization (JMIM) feature selection.
 
@@ -287,7 +290,7 @@ class FeatureSelector:
         selected_features = []
         best_jmim = -np.inf
 
-        while True:
+        while len(selected_features) < max_features:
             max_jmim = best_jmim  
             best_feature_to_add = None
             
@@ -520,7 +523,7 @@ class FeatureSelector:
         performance_drops = []
         all_dropped_features = []
 
-        for i in range(100):
+        for i in range(50):
             full_model = model(random_state=0)
             full_model.fit(X_train_encoded, y_train)
             
@@ -601,16 +604,16 @@ class FeatureSelector:
         model.fit(X_train, y_train)
 
         # Get original importances
-        result = permutation_importance(model, X_test, y_test, n_repeats=20, random_state=0, scoring=scoring)
+        result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=0, scoring=scoring)
         original_importances = result.importances_mean
 
         # Initialize array for permuted importances
-        n_repeats = 20
+        n_repeats = 10
         permuted_importances = np.zeros((n_repeats, X.shape[1]))
 
         for i in range(n_repeats):
             y_permuted = np.random.permutation(y_test)
-            permuted_result = permutation_importance(model, X_test, y_permuted, n_repeats=20, random_state=0, scoring=scoring)
+            permuted_result = permutation_importance(model, X_test, y_permuted, n_repeats=10, random_state=0, scoring=scoring)
             permuted_importances[i, :] = permuted_result.importances_mean
 
         # Calculate p-values
