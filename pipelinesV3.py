@@ -13,6 +13,7 @@ from sklearn.utils import _print_elapsed_time
 from sklearn.utils.metaestimators import available_if
 from sklearn.base import clone
 
+
 # This is pipelines V3!
 
 # class CustomPipeline(Pipeline):
@@ -408,7 +409,29 @@ class SaveMissingYMask(BaseEstimator, TransformerMixin):
     def fit_transform(self, X, y=None, **fit_params):
         self.fit(X, y)
         return self.transform(X, y)
+
+
+from sklearn.base import BaseEstimator, clone
+from sklearn.model_selection import BaseCrossValidator
+
+class PreprocessedSplitter(BaseCrossValidator):
+    def __init__(self, cv, pipeline):
+        self.cv = cv
+        self.pipeline = pipeline
+
+    def split(self, X, y, groups=None):
+        
+        pipeline_clone = clone(self.pipeline)
+
+        X_preprocessed, y_preprocessed = pipeline_clone.fit_transform(X, y)
+        
+        for train, test in self.cv.split(X_preprocessed, y_preprocessed):
+            yield train, test
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return self.cv.get_n_splits()
     
+
 class NBPipeline(CustomPipeline):
     def __init__(self, task_type='classification', steps=None, memory=None, verbose=False):
         self.task_type = task_type
@@ -416,7 +439,7 @@ class NBPipeline(CustomPipeline):
         
         if steps is None:
             numeric_transformer = Pipeline(steps=[
-                ('scaler', StandardScaler())
+                ('passthrough', 'passthrough')  # No transformation for Naive Bayes
             ])
 
             categorical_transformer = Pipeline(steps=[

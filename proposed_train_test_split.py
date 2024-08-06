@@ -92,13 +92,4 @@ def proposed_train_test_split(X, y, test_size=0.2, min_cluster_size=5, random_st
     return X_train_final, X_test_final, y_train_final, y_test_final
 
 
-# # Example Usage
-# df = pd.read_csv('weatherAUS.csv')
-# df.fillna(np.nan, inplace=True)
-# df.dropna(subset=['RainTomorrow'], inplace=True)
 
-
-# X = df.drop(columns=['RainTomorrow'])
-# y = df['RainTomorrow']
-
-# X_train, X_test, y_train, y_test = proposed_train_test_split(X, y, test_size=0.2, min_cluster_size=5, random_state=0, task='classification')
